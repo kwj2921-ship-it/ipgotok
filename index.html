@@ -94,6 +94,25 @@ h3{font-size:14px;margin:16px 2px 8px;color:var(--navy)}
 .login .card{padding:18px}
 .login label{display:block;font-size:13px;color:var(--sub);margin:12px 0 4px}
 .err{color:var(--danger);font-size:13px;margin-top:10px;white-space:pre-line}
+.sheet .row2{display:flex;gap:8px;margin-top:8px}
+.sheet .row2 .btn{flex:1;padding:10px 6px;font-size:14px}
+.btn.line{background:#fff;color:var(--navy);border:1px solid var(--line)}
+.btn:disabled{opacity:.45}
+.fl{display:block;font-size:13px;color:var(--sub);margin:10px 0 4px}
+textarea.inp{min-height:110px;resize:vertical}
+.quick{display:flex;gap:6px;margin-top:8px}
+.quick button{flex:1;border:1px solid var(--line);background:#fff;border-radius:7px;padding:8px 0;font-size:13px}
+.wbox{background:#FFF4E5;color:var(--warn);border-radius:7px;padding:9px 11px;font-size:13px;margin-top:10px;line-height:1.5}
+.rbox{background:#FDECEA;color:var(--danger);border-radius:7px;padding:9px 11px;font-size:13px;margin-top:10px;line-height:1.5}
+.ug{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:8px;font-size:14px}
+.ug .h{font-weight:700}
+.ug .s{font-size:13px;color:var(--sub);margin-top:3px}
+.topbtn{display:flex;gap:8px;margin-bottom:10px}
+.topbtn .inp{flex:1}
+.topbtn .btn{white-space:nowrap}
+.ven .vh{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ven .ed{border:1px solid var(--line);background:#fff;border-radius:6px;padding:5px 10px;font-size:13px}
+.ver{font-size:11px;color:#9AA6B2;text-align:center;margin-top:10px}
 .logout{display:block;margin:22px auto 0;border:0;background:none;color:var(--sub);text-decoration:underline;font-size:13px}
 </style>
 </head>
@@ -123,6 +142,7 @@ if (CFG.apiKey.startsWith("__")) {
   try { CFG = JSON.parse(localStorage.getItem("ipgo_cfg") || "null") || CFG; } catch (e) {}
 }
 const WK = "일월화수목금토";
+const APP_BUILD = "20261112152705";
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -193,13 +213,35 @@ function cancelOp(qid) { deleteDoc(doc(fs, "users", user.uid, "queue", qid)).cat
 
 // ---------- 화면에 보여 줄 데이터 (반영 대기 요청을 미리 겹쳐서) ----------
 function items() {
-  const pend = {};
-  for (const q of S.queue) { const o = q.op; if (o.t === "done" || o.t === "undo") pend[o.sid] = q; }
-  return (S.items || []).map((r) => {
+  const pend = {}, pdue = {}, pmemo = {}, purge = {}; const news = [];
+  for (const q of S.queue) {
+    const o = q.op;
+    if (o.t === "done" || o.t === "undo") pend[o.sid] = q;
+    else if (o.t === "due") pdue[o.sid] = q;
+    else if (o.t === "memo") pmemo[o.sid] = q;
+    else if (o.t === "urge") (o.sids || []).forEach((s) => { purge[s] = q; });
+    else if (o.t === "new") news.push(q);
+  }
+  const out = (S.items || []).map((r) => {
     const x = Object.assign({}, r); const q = pend[r.id];
     if (q) { x.pq = q; if (q.op.t === "done") { x.st = "입고완료"; x.act = q.op.date; } else { x.st = q.op.prev || "대기"; x.act = ""; } }
+    if (pdue[r.id]) { x.due = pdue[r.id].op.due; x.pd = pdue[r.id]; }
+    if (pmemo[r.id]) { x.memo = pmemo[r.id].op.text; x.pm = pmemo[r.id]; }
+    if (purge[r.id]) x.pu = purge[r.id];
     x.D = dday(x.due); return x;
   });
+  news.forEach((q, i) => {
+    const o = q.op;
+    out.push({ id: -(i + 1), car: o.car || "", code: o.code || "", name: o.name || "", vendor: o.vendor || "", due: o.due || "", qty: o.qty || "",
+      st: "대기", act: "", memo: o.memo || "", mf: true, u: null, pq: q, isNew: true, D: dday(o.due) });
+  });
+  return out;
+}
+const orig = (id) => (S.items || []).find((x) => x.id === id) || {};
+function pcOn() {
+  const m = S.meta || {}; if (!m.hb) return false;
+  const hb = new Date(m.hb.replace(" ", "T"));
+  return m.on !== false && (Date.now() - hb.getTime()) < 7 * 60000;
 }
 const isOpen = (r) => r.st !== "입고완료" && r.st !== "취소";
 function groups() {
@@ -260,7 +302,7 @@ function pcStatus() {
   const m = S.meta || {}; let txt = "";
   if (!m.hb) txt = '<span class="dot" style="background:#8A96A3"></span>PC 에서 아직 올린 내용이 없습니다';
   else {
-    const hb = new Date(m.hb.replace(" ", "T")); const on = m.on !== false && (Date.now() - hb.getTime()) < 7 * 60000;
+    const hb = new Date(m.hb.replace(" ", "T")); const on = pcOn();
     const hm = pad(hb.getHours()) + ":" + pad(hb.getMinutes());
     txt = on ? '<span class="dot" style="background:#3ED598"></span>PC 켜짐 · ' + hm + " 확인"
              : '<span class="dot" style="background:#8A96A3"></span>PC 꺼짐 · 마지막 동기화 ' + md2(m.hb.slice(0, 10)) + " " + hm;
@@ -287,13 +329,19 @@ function homeView() {
   if (tk.length) {
     h += "<h3>오늘 업무</h3><div class=\"list\">" + tk.map((x, i) => taskRow(ts, x, i)).join("") + "</div>";
   }
-  const ap = (S.meta.applied || []).filter((x) => !x.ok).slice(0, 5);
+  const ug = (S.meta.applied || []).filter((x) => x.t === "urge" && String(x.at || "").slice(0, 10) === today()).slice(0, 5);
+  if (ug.length) {
+    h += "<h3>독촉메일 결과 (오늘)</h3><div class=\"list\">" + ug.map((x) =>
+      '<div class="it"><div class="bd"><div class="t1" style="white-space:normal;color:' + (x.ok ? "var(--ok)" : "var(--danger)") + '">' + esc(x.msg) + '</div><div class="t2">' + esc(String(x.at || "").slice(11, 16)) + "</div></div></div>").join("") + "</div>";
+  }
+  const ap = (S.meta.applied || []).filter((x) => !x.ok && x.t !== "urge").slice(0, 5);
   if (ap.length) {
     h += "<h3>PC 에서 반영하지 못한 요청</h3><div class=\"list\">" + ap.map((x) =>
       '<div class="it"><div class="bd"><div class="t1" style="color:var(--danger)">' + esc(x.msg) + '</div><div class="t2">' + esc(x.at) + "</div></div></div>").join("") + "</div>";
   }
   h += '<div class="note">PC 가 꺼져 있어도 마지막으로 받은 내용을 볼 수 있습니다. 날짜(D-day, 지연 일수)는 핸드폰이 오늘 기준으로 다시 계산합니다.<br>핸드폰에서 누른 입고완료 · 업무는 PC 가 켜져 있으면 10~20초 안에, 꺼져 있으면 다음에 켤 때 반영됩니다.</div>';
   h += '<button class="logout" onclick="logout()">로그아웃</button>';
+  h += '<div class="ver">앱 V2.1 · ' + esc(APP_BUILD) + (S.meta.ver ? " · PC " + esc(S.meta.ver) : "") + "</div>";
   return h;
 }
 function kpi(l, n, on, bad, wide) {
@@ -302,6 +350,11 @@ function kpi(l, n, on, bad, wide) {
 
 // ---------- 입고 ----------
 function badge(r) {
+  const extra = (r.pu ? ' <span class="bdg p">발송 대기</span>' : "") + ((r.pd || r.pm) && !r.pq ? ' <span class="bdg p">변경 대기</span>' : "");
+  return badge0(r) + extra;
+}
+function badge0(r) {
+  if (r.isNew) return '<span class="bdg p">등록 대기</span>';
   if (r.pq) return '<span class="bdg p">반영 대기</span>';
   if (r.st === "입고완료") return '<span class="bdg d">완료 ' + md2(r.act) + "</span>";
   if (r.D == null) return '<span class="bdg">-</span>';
@@ -321,7 +374,9 @@ function inView() {
   const { g, all } = groups();
   if (!V.inTab) V.inTab = g.t.length ? "t" : g.o.length ? "o" : g.s.length ? "s" : "t";
   const tabs = [["t", "오늘", g.t.length], ["o", "지연", g.o.length], ["s", "임박", g.s.length], ["d", "완료", g.d.length]];
-  let h = '<input id="q" class="inp" placeholder="도번 · 품명 · 업체 검색" value="' + esc(V.q) + '" oninput="V.q=this.value;render()" style="margin-bottom:10px">';
+  let h = '<div class="topbtn"><input id="q" class="inp" placeholder="도번 · 품명 · 업체 검색" value="' + esc(V.q) + '" oninput="V.q=this.value;render()"><button class="btn" onclick="newForm()">+ 신규 등록</button></div>';
+  const nw = all.filter((r) => r.isNew);
+  if (nw.length && !V.q.trim()) h += '<div class="note"><b>신규 등록 대기 ' + nw.length + "건</b> (PC 에 반영되면 예정일에 맞는 탭으로 옮겨집니다)</div>" + '<div class="list" style="margin-bottom:10px">' + nw.map((r) => itemRow(r, false)).join("") + "</div>";
   let rows;
   if (V.q.trim()) {
     const q = V.q.trim().toLowerCase();
@@ -338,7 +393,7 @@ function inView() {
     h += '<div class="note" style="text-align:right"><span onclick="selAll(' + (allOn ? 0 : 1) + ')" style="color:var(--navy2);font-weight:700">' + (allOn ? "선택 해제" : "모두 선택") + "</span></div>";
   }
   h += '<div class="list">' + rows.map((r) => itemRow(r, true)).join("") + "</div>";
-  h += '<div class="note">품목을 체크하고 아래 [입고완료] 를 누르면 실입고일이 오늘로 들어갑니다. 품목을 누르면 상세 내용과 업체 연락처가 나옵니다.</div>';
+  h += '<div class="note">품목을 체크하고 아래 [입고완료] 또는 [독촉메일] 을 누르면 한 번에 처리됩니다. 품목을 누르면 상세 내용 · 예정일 변경 · 비고 수정 · 업체 연락처가 나옵니다.</div>';
   window._rows = rows;
   return h;
 }
@@ -347,7 +402,7 @@ window.selAll = (on) => { (window._rows || []).filter((r) => isOpen(r) && !r.pq)
 function actBar() {
   const e = $("#act");
   if (V.tab === "in" && V.sel.size) {
-    e.innerHTML = '<div class="actbar"><button class="btn gray" onclick="V.sel.clear();render()">취소</button><button class="btn red" onclick="doneSel()">선택 ' + V.sel.size + "건 입고완료</button></div>";
+    e.innerHTML = '<div class="actbar"><button class="btn gray" style="flex:.6" onclick="V.sel.clear();render()">취소</button><button class="btn" onclick="urgeSel()">독촉메일</button><button class="btn red" onclick="doneSel()">' + V.sel.size + "건 입고완료</button></div>";
   } else e.innerHTML = "";
 }
 window.doneSel = () => {
@@ -366,15 +421,27 @@ window.openItem = (id) => {
   h += kv("입고예정", md(r.due) + (r.D != null && isOpen(r) ? (r.D < 0 ? "  <b style='color:var(--danger)'>지연 +" + (-r.D) + "일</b>" : r.D === 0 ? "  <b>오늘</b>" : "  D-" + r.D) : ""));
   h += kv("상태", esc(r.st) + (r.act ? " (" + md(r.act) + ")" : ""));
   h += kv("발송횟수", r.u ? r.u[0] + "회 · " + md2(r.u[1]) : "-");
-  if (r.memo) h += kv("비고", esc(r.memo));
+  if (r.memo) h += kv("비고", esc(r.memo).replace(/\n/g, "<br>"));
   const v = (S.vendors || []).find((x) => x.n === r.vendor);
   if (v && v.c && v.c.length) h += kv("담당자", v.c.map((c) => esc(c.m) + (c.p ? ' <a href="tel:' + esc(c.p.replace(/[^0-9+]/g, "")) + '">' + esc(c.p) + "</a>" : "")).join("<br>"));
+  if (r.pd) h += '<div class="wbox">입고예정일 변경 대기 : ' + md(r.pd.op.due) + ' (PC 에 반영되면 사라집니다) <b onclick="cancelPend(\'' + r.pd.id + '\')" style="text-decoration:underline">변경 취소</b></div>';
+  if (r.pm) h += '<div class="wbox">비고 변경 대기 중 <b onclick="cancelPend(\'' + r.pm.id + '\')" style="text-decoration:underline">변경 취소</b></div>';
+  if (r.pu) h += '<div class="wbox">독촉메일 발송 대기 중 (PC 가 보냅니다)</div>';
   h += '<div class="btns"><button class="btn gray" onclick="closeSheet()">닫기</button>';
-  if (r.pq && r.pq.op.t === "done") h += '<button class="btn" onclick="cancelPend(\'' + r.pq.id + '\')">입고완료 취소 (반영 전)</button>';
+  if (r.isNew) h += '<button class="btn" onclick="cancelPend(\'' + r.pq.id + '\')">등록 취소 (반영 전)</button>';
+  else if (r.pq && r.pq.op.t === "done") h += '<button class="btn" onclick="cancelPend(\'' + r.pq.id + '\')">입고완료 취소 (반영 전)</button>';
   else if (r.pq) h += '<button class="btn gray" disabled>PC 반영 대기 중</button>';
   else if (isOpen(r)) h += '<button class="btn red" onclick="doneOne(' + r.id + ')">입고완료</button>';
   else if (r.st === "입고완료") h += '<button class="btn" onclick="undoOne(' + r.id + ')">입고완료 되돌리기</button>';
-  h += "</div></div></div>";
+  h += "</div>";
+  if (!r.isNew && !r.pq) {
+    h += '<div class="row2">';
+    if (isOpen(r)) h += '<button class="btn line" onclick="dueForm(' + r.id + ')">예정일 변경</button>';
+    h += '<button class="btn line" onclick="memoForm(' + r.id + ')">비고 수정</button>';
+    if (isOpen(r) && r.D != null) h += '<button class="btn line" onclick="urgeForm([' + r.id + '])">독촉메일</button>';
+    h += "</div>";
+  }
+  h += "</div></div>";
   $("#sheet").innerHTML = h;
 };
 window.closeSheet = () => { $("#sheet").innerHTML = ""; };
@@ -385,6 +452,115 @@ window.undoOne = (id) => {
   const d = dday(r.due); sendOp({ t: "undo", sid: id, code: r.code, prev: d != null && d < 0 ? "지연" : "대기" }); closeSheet(); toast("되돌리기 · PC 에 반영 중");
 };
 window.cancelPend = (qid) => { cancelOp(qid); closeSheet(); toast("보내기 전 요청을 취소했습니다"); };
+
+// ---------- V2.1 : 예정일 변경 / 비고 / 신규 등록 / 독촉메일 ----------
+function sheet(inner) {
+  $("#sheet").innerHTML = '<div class="sheet-bg" onclick="closeSheet(event)"><div class="sheet" onclick="event.stopPropagation()">' + inner + "</div></div>";
+}
+const addDays = (s, n) => { const d = isD(s) ? P(s) : P(today()); d.setDate(d.getDate() + n); return ymd(d); };
+window.dueForm = (id) => {
+  const r = items().find((x) => x.id === id); if (!r) return;
+  let h = "<h2>" + esc(r.code) + " 입고예정일 변경</h2>";
+  h += '<div class="note">' + esc(r.vendor) + " · " + esc(r.name) + "<br>지금 예정일 : <b>" + md(r.due) + "</b></div>";
+  h += '<label class="fl">새 입고예정일</label><input id="nd" class="inp" type="date" value="' + esc(isD(r.due) ? r.due : today()) + '">';
+  h += '<div class="quick"><button onclick="qd(1)">+1일</button><button onclick="qd(3)">+3일</button><button onclick="qd(7)">+7일</button><button onclick="qd(14)">+14일</button></div>';
+  h += '<div class="note">+ 버튼은 지금 예정일 기준으로 미룹니다. 지연 품목을 오늘 이후로 미루면 PC 에서 지연 표시가 풀립니다.</div>';
+  h += '<div class="btns"><button class="btn gray" onclick="openItem(' + id + ')">뒤로</button><button class="btn red" onclick="saveDue(' + id + ')">저장</button></div>';
+  window._dueBase = isD(r.due) ? r.due : today();
+  sheet(h);
+};
+window.qd = (n) => { $("#nd").value = addDays(window._dueBase, n); };
+window.saveDue = (id) => {
+  const r = items().find((x) => x.id === id); if (!r) return;
+  const v = ($("#nd").value || "").trim();
+  if (!isD(v)) { toast("날짜를 골라 주세요"); return; }
+  if (v === r.due) { toast("지금 예정일과 같습니다"); return; }
+  if (r.pd) cancelOp(r.pd.id);
+  sendOp({ t: "due", sid: id, code: r.code, due: v, old: orig(id).due || "" });
+  closeSheet(); toast(r.code + " 예정일 " + md2(v) + " · PC 에 반영 중");
+};
+window.memoForm = (id) => {
+  const r = items().find((x) => x.id === id); if (!r) return;
+  const full = r.mf !== false;
+  let h = "<h2>" + esc(r.code) + " 비고 수정</h2>";
+  h += '<div class="note">' + esc(r.vendor) + " · " + esc(r.name) + "</div>";
+  if (!full) h += '<div class="wbox">비고가 길어 핸드폰에는 앞부분만 받았습니다. 여기 쓴 내용은 PC 비고 맨 뒤에 덧붙습니다.</div>';
+  h += '<label class="fl">' + (full ? "비고 (PC 입고등록관리의 비고 칸)" : "덧붙일 내용") + '</label><textarea id="nmemo" class="inp" placeholder="예) 2EA 부족 입고, 나머지 금요일">' + (full ? esc(r.memo || "") : "") + "</textarea>";
+  h += '<div class="quick"><button onclick="stamp()">오늘 날짜 넣기</button></div>';
+  h += '<div class="btns"><button class="btn gray" onclick="openItem(' + id + ')">뒤로</button><button class="btn red" onclick="saveMemo(' + id + "," + (full ? 1 : 0) + ')">저장</button></div>';
+  sheet(h);
+};
+window.stamp = () => { const e = $("#nmemo"); const s = "[" + md2(today()) + "] "; e.value = (e.value.trim() ? e.value.replace(/\s+$/, "") + "\n" : "") + s; e.focus(); };
+window.saveMemo = (id, full) => {
+  const r = items().find((x) => x.id === id); if (!r) return;
+  const v = ($("#nmemo").value || "").replace(/\s+$/, "");
+  if (full && v === (r.memo || "").replace(/\s+$/, "")) { toast("바뀐 내용이 없습니다"); return; }
+  if (!full && !v.trim()) { toast("덧붙일 내용을 써 주세요"); return; }
+  if (r.pm) cancelOp(r.pm.id);
+  sendOp({ t: "memo", sid: id, code: r.code, text: v, old: orig(id).memo || "", add: !full });
+  closeSheet(); toast(r.code + " 비고 저장 · PC 에 반영 중");
+};
+window.newForm = () => {
+  const cars = (S.meta.cars || []).filter(Boolean); const vs = (S.vendors || []).map((v) => v.n).filter(Boolean);
+  let h = "<h2>입고 품목 신규 등록</h2>";
+  h += '<datalist id="dl_car">' + cars.map((c) => '<option value="' + esc(c) + '">').join("") + "</datalist>";
+  h += '<datalist id="dl_ven">' + vs.map((c) => '<option value="' + esc(c) + '">').join("") + "</datalist>";
+  h += '<label class="fl">도번 *</label><input id="n_code" class="inp" autocomplete="off">';
+  h += '<label class="fl">품명</label><input id="n_name" class="inp" autocomplete="off">';
+  h += '<label class="fl">업체</label><input id="n_ven" class="inp" list="dl_ven" autocomplete="off" placeholder="눌러서 목록에서 고르기">';
+  h += '<label class="fl">차종</label><input id="n_car" class="inp" list="dl_car" autocomplete="off">';
+  h += '<label class="fl">입고예정일</label><input id="n_due" class="inp" type="date">';
+  h += '<label class="fl">수량</label><input id="n_qty" class="inp" autocomplete="off" placeholder="예) 20EA">';
+  h += '<label class="fl">비고</label><input id="n_memo" class="inp" autocomplete="off">';
+  h += '<div class="note">알림 D-일수는 PC 설정의 기본값으로 들어갑니다. 사전안내 D-일수를 따로 정하려면 PC 에서 고쳐 주세요.</div>';
+  h += '<div class="btns"><button class="btn gray" onclick="closeSheet()">닫기</button><button class="btn red" onclick="saveNew()">등록</button></div>';
+  sheet(h);
+};
+window.saveNew = () => {
+  const g = (k) => ($("#" + k).value || "").trim();
+  const o = { t: "new", code: g("n_code"), name: g("n_name"), vendor: g("n_ven"), car: g("n_car"), due: g("n_due"), qty: g("n_qty"), memo: g("n_memo") };
+  if (!o.code) { toast("도번을 넣어 주세요"); return; }
+  if (o.due && !isD(o.due)) { toast("입고예정일을 확인해 주세요"); return; }
+  if (o.vendor && !(S.vendors || []).some((v) => v.n === o.vendor) && !confirm("'" + o.vendor + "' 는 등록된 업체가 아닙니다.\n그대로 등록할까요? (독촉메일을 보내려면 업체 연락처가 필요합니다)")) return;
+  const dup = items().find((r) => isOpen(r) && r.code === o.code && r.due === o.due && r.vendor === o.vendor);
+  if (dup && !confirm(o.code + " 은(는) 같은 업체 · 같은 예정일로 이미 있습니다.\n그래도 보낼까요? (PC 에서 중복이면 등록하지 않습니다)")) return;
+  sendOp(o); closeSheet(); toast(o.code + " 신규 등록 · PC 에 반영 중");
+};
+window.urgeSel = () => urgeForm([...V.sel]);
+window.urgeForm = (ids) => {
+  const its = items().filter((r) => ids.includes(r.id) && isOpen(r) && !r.pq && r.D != null);
+  if (!its.length) { toast("독촉메일을 보낼 수 있는 품목이 없습니다 (예정일 없는 품목 제외)"); return; }
+  const grp = {}; const order = [];
+  for (const r of its) { const k = (r.vendor || "") + "|" + (r.D < 0 ? "o" : "a"); if (!grp[k]) { grp[k] = []; order.push(k); } grp[k].push(r); }
+  const sent = S.meta.sent || {}; const sentCodes = sent.d === today() ? new Set(sent.codes || []) : new Set();
+  const on = pcOn(); let nOk = 0;
+  let h = "<h2>독촉메일 보내기</h2>";
+  h += '<div class="note">핸드폰에서 요청하면 <b>사무실 PC 입고톡이 업체에 메일을 보냅니다.</b> PC 에서 고르는 것과 같은 양식으로, 업체의 <b>기본 수신 담당자</b>에게 업체별 1통씩 갑니다. 참조(CC)는 넣지 않습니다.</div>';
+  for (const k of order) {
+    const g = grp[k]; const v = (S.vendors || []).find((x) => x.n === g[0].vendor);
+    const to = v ? (v.c || []).filter((c) => c.main && c.e) : [];
+    const od = g[0].D < 0; const dupN = g.filter((r) => sentCodes.has(r.code)).length;
+    if (to.length) nOk++;
+    h += '<div class="ug"><div class="h">' + esc(g[0].vendor || "업체 미지정") + " · " + g.length + "건 · " + (od ? '<span style="color:var(--danger)">미입고 독촉</span>' : "입고 사전안내") + "</div>";
+    h += '<div class="s">' + g.map((r) => esc(r.code) + (r.D < 0 ? " (+" + (-r.D) + "일)" : " (D-" + r.D + ")")).join(", ") + "</div>";
+    h += '<div class="s">받는 사람 : ' + (to.length ? to.map((c) => esc(c.m || "담당자")).join(", ") : '<b style="color:var(--danger)">이메일 미등록 - 보내지 않습니다</b>') + "</div>";
+    if (dupN) h += '<div class="s" style="color:var(--warn)">오늘 이미 독촉메일을 보낸 품목 ' + dupN + "건이 있습니다 (한 번 더 나갑니다)</div>";
+    h += "</div>";
+  }
+  if (!on) h += '<div class="rbox"><b>PC 가 꺼져 있어 보낼 수 없습니다.</b><br>독촉메일은 사무실 PC 입고톡이 켜져 있을 때만 보낼 수 있습니다. (PC 를 늦게 켰을 때 엉뚱한 날 메일이 나가지 않도록)</div>';
+  else if (!nOk) h += '<div class="rbox">받는 사람 이메일이 등록된 업체가 없습니다. [업체] 탭에서 담당자 이메일을 넣어 주세요.</div>';
+  else h += '<div class="note">요청 후 30분 안에 PC 가 처리하지 못하면 보내지 않습니다. 결과는 [홈] 의 \'독촉메일 결과\' 에 나옵니다.</div>';
+  h += '<div class="btns"><button class="btn gray" onclick="closeSheet()">닫기</button><button class="btn red" ' + (on && nOk ? "" : "disabled") + ' onclick="sendUrge()">' + nOk + "개 업체에 보내기</button></div>";
+  window._urgeIds = its.map((r) => r.id); window._urgeCodes = its.map((r) => r.code);
+  sheet(h);
+};
+window.sendUrge = () => {
+  if (!pcOn()) { toast("PC 가 꺼져 있어 보낼 수 없습니다"); return; }
+  if (!confirm("업체에 독촉메일을 보낼까요?\n(사무실 PC 가 바로 보냅니다)")) return;
+  sendOp({ t: "urge", sids: window._urgeIds || [], codes: window._urgeCodes || [] });
+  V.sel.clear(); closeSheet(); render(); toast("독촉메일 요청 · PC 가 보냅니다");
+};
+
 
 // ---------- 업무 (달력) ----------
 function workView() {
@@ -426,16 +602,62 @@ window.addTask = () => {
 };
 
 // ---------- 업체 연락처 ----------
+function venPend() {
+  const P_ = {};
+  for (const q of S.queue) { const o = q.op; if (o.t === "vc_save" || o.t === "vc_del") (P_[o.vendor] = P_[o.vendor] || []).push(q); }
+  return P_;
+}
 function venView() {
-  const q = V.vq.trim().toLowerCase();
-  const L = (S.vendors || []).filter((v) => !q || v.n.toLowerCase().includes(q) || (v.c || []).some((c) => String(c.m).toLowerCase().includes(q)));
-  let h = '<input id="vq" class="inp" placeholder="업체명 · 담당자 검색" value="' + esc(V.vq) + '" oninput="V.vq=this.value;render()" style="margin-bottom:10px">';
+  const q = V.vq.trim().toLowerCase(); const pend = venPend();
+  const names = (S.vendors || []).map((v) => v.n);
+  const extra = Object.keys(pend).filter((n) => !names.includes(n)).map((n) => ({ n, c: [], isNew: true }));
+  const L = (S.vendors || []).concat(extra).filter((v) => !q || v.n.toLowerCase().includes(q) || (v.c || []).some((c) => String(c.m).toLowerCase().includes(q)));
+  let h = '<div class="topbtn"><input id="vq" class="inp" placeholder="업체명 · 담당자 검색" value="' + esc(V.vq) + '" oninput="V.vq=this.value;render()"><button class="btn" onclick="vcForm(\'\',-1,1)">+ 업체</button></div>';
   if (!L.length) return h + '<div class="list"><div class="empty">업체가 없습니다.</div></div>';
-  h += L.map((v) => '<div class="card ven" style="margin-bottom:8px"><div class="vn">' + esc(v.n) + "</div>" +
-    ((v.c || []).length ? v.c.map((c) => '<div class="ct"><span>' + esc(c.m || "담당자") + (c.main ? ' <span class="bdg">기본</span>' : "") + "<br><span style=\"color:var(--sub);font-size:13px\">" + esc(c.p || "전화번호 없음") + "</span></span>" +
-      (c.p ? '<a href="tel:' + esc(c.p.replace(/[^0-9+]/g, "")) + '">전화</a>' : "") + "</div>").join("") : '<div class="note">등록된 담당자가 없습니다.</div>') + "</div>").join("");
+  h += L.map((v) => {
+    const vi = (S.vendors || []).indexOf(v); const pq = pend[v.n] || [];
+    let x = '<div class="card ven" style="margin-bottom:8px"><div class="vh"><div class="vn">' + esc(v.n) + (pq.length ? ' <span class="bdg p">변경 대기 ' + pq.length + "</span>" : "") + "</div>" +
+      '<button class="ed" onclick="vcForm(' + vi + ',-1,0)">+ 담당자</button></div>';
+    x += (v.c || []).length ? v.c.map((c, ci) => '<div class="ct"><span onclick="vcForm(' + vi + "," + ci + ',0)">' + esc(c.m || "담당자") + (c.main ? ' <span class="bdg">기본</span>' : "") + (c.e ? ' <span class="bdg d">메일</span>' : "") +
+      "<br><span style=\"color:var(--sub);font-size:13px\">" + esc(c.p || "전화번호 없음") + ' · <u>수정</u></span></span>' +
+      (c.p ? '<a href="tel:' + esc(c.p.replace(/[^0-9+]/g, "")) + '">전화</a>' : "") + "</div>").join("") : '<div class="note">등록된 담당자가 없습니다.</div>';
+    return x + "</div>";
+  }).join("");
+  h += '<div class="note">담당자를 누르면 고칠 수 있습니다. <span class="bdg d">메일</span> 은 이메일이 등록된 담당자, <span class="bdg">기본</span> 은 독촉메일 기본 수신자입니다. 보안상 이메일 주소는 핸드폰에 보이지 않습니다.</div>';
   return h;
 }
+window.vcForm = (vi, ci, newV) => {
+  const v = vi === "" || vi < 0 ? null : (S.vendors || [])[vi];
+  const c = v && ci >= 0 ? v.c[ci] : null;
+  let h = "<h2>" + (newV ? "업체 추가" : c ? "담당자 수정" : "담당자 추가") + "</h2>";
+  if (newV) h += '<label class="fl">업체명 *</label><input id="vc_n" class="inp" autocomplete="off">';
+  else h += '<div class="note">업체 : <b>' + esc(v.n) + "</b></div>";
+  h += '<label class="fl">담당자 이름</label><input id="vc_m" class="inp" autocomplete="off" value="' + esc(c ? c.m : "") + '">';
+  h += '<label class="fl">전화번호</label><input id="vc_p" class="inp" type="tel" autocomplete="off" value="' + esc(c ? c.p : "") + '">';
+  h += '<label class="fl">이메일 ' + (c && c.e ? "(등록되어 있음 · 바꿀 때만 입력)" : "(독촉메일 받을 주소)") + '</label><input id="vc_e" class="inp" type="email" autocomplete="off" placeholder="' + (c && c.e ? "비워 두면 그대로 둡니다" : "예) kim@vendor.co.kr") + '">';
+  h += '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px"><input id="vc_main" type="checkbox" class="chk" ' + (!c || c.main ? "checked" : "") + "> 독촉메일 기본 수신자</label>";
+  h += '<div class="btns"><button class="btn gray" onclick="closeSheet()">닫기</button>';
+  if (c) h += '<button class="btn line" style="color:var(--danger)" onclick="vcDel(' + vi + "," + ci + ')">삭제</button>';
+  h += '<button class="btn red" onclick="vcSave(' + (vi === "" ? -1 : vi) + "," + ci + "," + (newV ? 1 : 0) + ')">저장</button></div>';
+  sheet(h);
+};
+window.vcSave = (vi, ci, newV) => {
+  const g = (k) => ($("#" + k) ? $("#" + k).value : "").trim();
+  const v = vi >= 0 ? (S.vendors || [])[vi] : null; const c = v && ci >= 0 ? v.c[ci] : null;
+  const name = newV ? g("vc_n") : v.n;
+  if (!name) { toast("업체명을 넣어 주세요"); return; }
+  if (newV && (S.vendors || []).some((x) => x.n === name)) { toast("이미 있는 업체입니다. 그 업체의 [+ 담당자] 를 눌러 주세요"); return; }
+  const e = g("vc_e"); if (e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) { toast("이메일 형식을 확인해 주세요"); return; }
+  const o = { t: "vc_save", vendor: name, m: g("vc_m"), p: g("vc_p"), e, main: $("#vc_main").checked, newv: !!newV };
+  if (c) { o.cid = c.i || 0; o.om = c.m; o.op = c.p; }
+  if (!newV && !c && !(o.m || o.p || o.e)) { toast("이름 · 전화번호 · 이메일 중 하나는 넣어 주세요"); return; }
+  sendOp(o); closeSheet(); toast(name + " 담당자 저장 · PC 에 반영 중");
+};
+window.vcDel = (vi, ci) => {
+  const v = (S.vendors || [])[vi]; const c = v && v.c[ci]; if (!c) return;
+  if (!confirm(v.n + " 의 담당자 '" + (c.m || c.p) + "' 를 삭제할까요?")) return;
+  sendOp({ t: "vc_del", vendor: v.n, cid: c.i || 0, om: c.m, op: c.p }); closeSheet(); toast("담당자 삭제 · PC 에 반영 중");
+};
 
 // ---------- 로그인 / 처음 설정 ----------
 function loginView() {

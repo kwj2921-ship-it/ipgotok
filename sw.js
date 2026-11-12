@@ -1,5 +1,5 @@
 // 입고톡 모바일 앱 - 화면 파일 저장 (인터넷이 없어도 열리게)
-const C = "ipgo-20261112143356";
+const C = "ipgo-20261112152705";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-512-maskable.png"];
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(C).then((c) => c.addAll(SHELL)).catch(() => {}));
