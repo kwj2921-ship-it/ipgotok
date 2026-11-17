@@ -142,7 +142,7 @@ if (CFG.apiKey.startsWith("__")) {
   try { CFG = JSON.parse(localStorage.getItem("ipgo_cfg") || "null") || CFG; } catch (e) {}
 }
 const WK = "일월화수목금토";
-const APP_BUILD = "20261117090454";
+const APP_BUILD = "20261117092651";
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
@@ -712,9 +712,11 @@ function cardFmtTel(s) {
 function parseCard(text) {
   const out = { n: "", m: "", p: "", e: "" };
   const L = String(text || "").split(/\r?\n/).map((x) => x.replace(/[|_~`'"“”‘’]+/g, " ").replace(/\s+/g, " ").trim()).filter((x) => x.length > 1);
-  // 이메일
+  // 이메일 : 'E-mail.' 'Email:' '이메일' 같은 앞 글자(항목 이름)를 먼저 지우고 주소만 꺼냅니다
+  const MAIL_LAB = /(^|[^A-Za-z0-9])(?:(?:e\s*[-_.·]?\s*ma[il1I|!][il1I|!]|mail)(?:\s*[:：.,;]\s*|\s+)|(?:이\s*메\s*일|메\s*일)\s*[:：.,;]?\s*)/gi;
   for (const x of L) {
-    const y = x.replace(/\s*@\s*/g, "@").replace(/\s*\.\s*(?=[A-Za-z])/g, ".");
+    let y = x.replace(MAIL_LAB, "$1 ").replace(/\s*@\s*/g, "@");
+    y = y.replace(/@[A-Za-z0-9.\-\s]*/, (d) => d.replace(/\s*\.\s*(?=[A-Za-z])/g, "."));   // 도메인 쪽 'naver . com' 만 붙입니다
     const m = y.match(/[A-Za-z0-9][A-Za-z0-9._%+\-]*@[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}/);
     if (m) { out.e = m[0].replace(/^[.\-]+|[.\-]+$/g, "").toLowerCase(); break; }
   }
